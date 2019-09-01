@@ -12,7 +12,8 @@ This allows you to control your RM Mini and Pro with HomeKit and Siri.
 ## Installation
 
 1. Install homebridge using: `sudo npm install -g homebridge`
-2. Install this plugin using: `npm install -g homebridge-broadlink-rm`
+2. Clone this fork in your node modules folder by typing "sudo git clone https://github.com/Cloudore/homebridge-broadlink-rm.git" while there
+3. go into the homebridge-broadlink-rm folder and type "sudo npm install"
 3. Update your configuration file. (See config-sample.json)
 
 ## Overriding the homebridge directory (AKA where the consig.json file lives)
