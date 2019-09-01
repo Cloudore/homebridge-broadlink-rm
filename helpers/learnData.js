@@ -1,4 +1,4 @@
-const { getDevice } = require('./getDevice');
+const getDevice = require('./getDevice');
 
 let closeClient = null;
 let timeout = null;
@@ -11,7 +11,7 @@ const stop = (log) => {
   closeClient();
   closeClient = null;
 
-  log(`\x1b[35m[INFO]\x1b[0m Learn Code (stopped)`);
+  log(`Learn Code (stopped)`);
 }
 
 const start = (host, callback, turnOffCallback, log, disableTimeout) => {
@@ -19,11 +19,8 @@ const start = (host, callback, turnOffCallback, log, disableTimeout) => {
 
   // Get the Broadlink device
   const device = getDevice({ host, log, learnOnly: true });
-  if (!device) {
-    return log(`\x1b[31m[ERROR]\x1b[0m Learn Code (Couldn't learn code, device not found)`);
-  }
-
-  if (!device.enterLearning) return log(`\x1b[31m[ERROR]\x1b[0m Learn Code (IR learning not supported for device at ${host})`);
+  if (!device) return;
+  if (!device.enterLearning) return log(`Learn Code (IR learning not supported for device at ${host})`);
 
   let onRawData;
 
@@ -35,15 +32,14 @@ const start = (host, callback, turnOffCallback, log, disableTimeout) => {
     getDataTimeout = null;
 
     device.removeListener('rawData', onRawData);
-    device.cancelLearn();
   };
 
   onRawData = (message) => {
     if (!closeClient) return;
 
     const hex = message.toString('hex');
-    log(`\x1b[35m[RESULT]\x1b[0m Learn Code (learned hex code: ${hex})`);
-    log(`\x1b[35m[INFO]\x1b[0m Learn Code (complete)`);
+    log(`Learn Code (learned hex code: ${hex})`);
+    log(`Learn Code (complete)`);
 
     closeClient();
 
@@ -65,8 +61,8 @@ const start = (host, callback, turnOffCallback, log, disableTimeout) => {
 
   // Timeout the client after 10 seconds
   timeout = setTimeout(() => {
-    log('\x1b[35m[INFO]\x1b[0m Learn Code (stopped - 10s timeout)');
-    device.cancelLearn();
+    log('Learn Code (stopped - 10s timeout)');
+    if (device.cancelRFSweep) device.cancelRFSweep();
 
     closeClient();
 
