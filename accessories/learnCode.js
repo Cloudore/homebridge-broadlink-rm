@@ -1,28 +1,23 @@
 const learnData = require('../helpers/learnData');
 const learnRFData = require('../helpers/learnRFData');
-const ServiceManager = require('../helpers/serviceManager');
-const ServiceManagerTypes = require('../helpers/serviceManagerTypes');
-
 const BroadlinkRMAccessory = require('./accessory');
 
 class LearnIRAccessory extends BroadlinkRMAccessory {
 
-  constructor (log, config = {}, serviceManagerType) {    
-
+  constructor (log, config = {}) {
     // Set a default name for the accessory
     if (!config.name) config.name = 'Learn Code';
     config.persistState = false;
 
-
-    super(log, config, serviceManagerType);
+    super(log, config);
   }
 
-  toggleLearning (props, on, callback) {
-    const { config, serviceManager } = this;
+  toggleLearning (on, callback) {
+    const { config } = this;
     const { disableAutomaticOff, scanRF, scanFrequency } = config;
 
     const turnOffCallback = () => {
-      serviceManager.setCharacteristic(Characteristic.On, false);
+      this.learnService.setCharacteristic(Characteristic.On, false);
     }
 
     if (scanRF || scanFrequency) {
@@ -46,23 +41,18 @@ class LearnIRAccessory extends BroadlinkRMAccessory {
     }
   }
 
-  setupServiceManager () {
-    const { data, name, config, serviceManagerType } = this;
-    const { on, off } = data || { };
+  getServices () {
+    const services = super.getServices();
+    const { data, name } = this;
 
-    this.serviceManager = new ServiceManagerTypes[serviceManagerType](name, Service.Switch, this.log);
+    const service = new Service.Switch(name);
+    this.addNameService(service);
+    service.getCharacteristic(Characteristic.On).on('set', this.toggleLearning.bind(this));
 
-    this.serviceManager.addToggleCharacteristic({
-      name: 'switchState',
-      type: Characteristic.On,
-      getMethod: this.getCharacteristicValue,
-      setMethod: this.toggleLearning.bind(this),
-      bind: this,
-      props: {
-      
-      },
-      bind: this
-    })
+    this.learnService = service
+    services.push(service);
+
+    return services;
   }
 }
 

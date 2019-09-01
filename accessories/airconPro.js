@@ -2,7 +2,7 @@ const BroadlinkRMAccessory = require('./accessory');
 const getDevice = require('../helpers/getDevice');
 const sendData = require('../helpers/sendData');
 
-class AirConAccessory extends BroadlinkRMAccessory {
+class AirConProAccessory extends BroadlinkRMAccessory {
 
   correctReloadedState (state) {
     state.lastUsedHeatingCoolingState = undefined;
@@ -137,9 +137,9 @@ class AirConAccessory extends BroadlinkRMAccessory {
     const { pseudoDeviceTemperature, autoHeatTemperature, autoCoolTemperature } = config;
 
     // Some devices don't include a thermometer
-    if (pseudoDeviceTemperature !== undefined) return;
+    //if (pseudoDeviceTemperature !== undefined) return;
 
-    if (!autoHeatTemperature && !autoCoolTemperature) return;
+    //if (!autoHeatTemperature && !autoCoolTemperature) return;
 
     this.getCurrentTemperature((err, temperature) => {
       this.thermostatService.setCharacteristic(Characteristic.CurrentTemperature, temperature);
@@ -220,19 +220,33 @@ class AirConAccessory extends BroadlinkRMAccessory {
   }
 
   // Thermostat
-  sendTemperature (temperature, previousTemperature) {
+  sendTemperature (temperature, previousTemperature,targetHeatingCoolingState) {
     const { config, data, host, log, name, state } = this;
     const { defaultHeatTemperature, defaultCoolTemperature, heatTemperature } = config;
-
+    var targethcs = "";
+    switch (targetHeatingCoolingState) {
+      case 1:
+        targethcs = 'heat';
+        break;
+      case 2:
+        targethcs = 'cool';
+        break;
+      case 3:
+        targethcs = 'auto';
+        break;
+      default :
+        state.targetTemperature = temperature;
+        this.updateTemperatureUI();
+        return;
+    }
     log(`${name} Potential sendTemperature (${temperature})`);
-
     let hasTemperatureChanged = (previousTemperature !== temperature);
-    let hexData = data[`temperature${temperature}`];
+    let hexData = data[`${targethcs}${temperature}`];
 
     // You may not want to set the hex data for every single mode...
     if (!hexData) {
       const defaultTemperature = (temperature >= heatTemperature) ? defaultHeatTemperature : defaultCoolTemperature;
-      hexData = data[`temperature${defaultTemperature}`];
+      hexData = data[`${targethcs}${defaultTemperature}`];
 
       if (!hexData) {
         const error = Error(`You need to set the defaultHeatTemperature and defaultCoolTemperature or provide a hex code for the given mode/temperature:
@@ -251,10 +265,9 @@ class AirConAccessory extends BroadlinkRMAccessory {
       state.targetTemperature = temperature;
     }
 
-    if (!hasTemperatureChanged && !state.firstTemperatureUpdate && state.currentHeatingCoolingState !== Characteristic.TargetHeatingCoolingState.OFF) return;
-
+    //if (!state.firstTemperatureUpdate && state.currentHeatingCoolingState !== Characteristic.TargetHeatingCoolingState.OFF) return;
     state.firstTemperatureUpdate = false;
-
+    
     const mode = hexData['pseudo-mode'];
     this.log(`${name} sendTemperature (${state.targetTemperature}, ${mode})`);
     this.updateServiceHeatingCoolingState(this.heatingCoolingStateForConfigKey(hexData['pseudo-mode']));
@@ -263,7 +276,7 @@ class AirConAccessory extends BroadlinkRMAccessory {
 
     state.lastUsedTemperature = state.targetTemperature;
     state.lastUsedHeatingCoolingState = state.currentHeatingCoolingState;
-
+    this.updateTemperatureUI();
     sendData({ host, hexData: hexData.data, log, name });
   }
 
@@ -276,8 +289,7 @@ class AirConAccessory extends BroadlinkRMAccessory {
 	setTargetHeatingCoolingState () {
     const { config, data, host, log, name, state } = this;
     const { defaultCoolTemperature, defaultHeatTemperature, replaceAutoMode } = config;
-
-    // Perform the auto -> cool/heat conversion descrived in constructor()
+    // Perform the auto -> cool/heat conversion described in constructor()
     if (replaceAutoMode && this.configKeyForHeatingCoolingState(this.targetHeatingCoolingState) === 'auto') {
       if (state.firstTemperatureUpdate || state.lastUsedHeatingCoolingState === this.heatingCoolingStateForConfigKey('auto')) {
      		log(`${name} setTargetHeatingCoolingState (converting from auto to ${replaceAutoMode})`);
@@ -300,36 +312,44 @@ class AirConAccessory extends BroadlinkRMAccessory {
     if (state.targetHeatingCoolingState === undefined) return; // Some calls are made to this without a value
     if (state.targetHeatingCoolingState === state.currentHeatingCoolingState) return;
 
-    let temperature = state.targetTemperature;
-
-    if (state.targetHeatingCoolingState === Characteristic.TargetHeatingCoolingState.HEAT) {
-      temperature = defaultHeatTemperature
-    } else if (state.targetHeatingCoolingState === Characteristic.TargetHeatingCoolingState.COOL) {
-      temperature = defaultCoolTemperature;
-    }
-
     const currentModeConfigKey = this.configKeyForHeatingCoolingState(state.targetHeatingCoolingState);
 
-    if (currentModeConfigKey === 'off') {
+    const currentModeData = data[currentModeConfigKey]
+    if (currentModeData) {
       this.state.runningAutomatically = false;
       this.resetAutoOnTimeout();
 
       this.updateServiceHeatingCoolingState(state.targetHeatingCoolingState);
-      sendData({ host, hexData: data.off, log, name });
+      sendData({ host, hexData: currentModeData, log, name });
     } else {
-      this.sendTemperature(temperature, state.targetTemperature);
+
+      let temperature = state.targetTemperature;
+
+      if (state.targetHeatingCoolingState === Characteristic.TargetHeatingCoolingState.HEAT) {
+        temperature = defaultHeatTemperature
+      } else if (state.targetHeatingCoolingState === Characteristic.TargetHeatingCoolingState.COOL) {
+        temperature = defaultCoolTemperature;
+      } else {
+        temperature = 26;  
+      }
+
+      this.sendTemperature(temperature, state.targetTemperature,state.targetHeatingCoolingState);
     }
 	}
 
 	getCurrentTemperature (callback) {
     const { config, host, log, name, state } = this;
     const { pseudoDeviceTemperature, temperatureAdjustment } = config;
-
+    //log(state.targetTemperature);
     // Some devices don't include a thermometer
     if (pseudoDeviceTemperature !== undefined) {
-      log(`${name} getCurrentTemperature (using ${pseudoDeviceTemperature} from config)`);
-
-      return callback(null, pseudoDeviceTemperature);
+      //log(`${name} getCurrentTemperature (using ${state.targetTemperature} from target)`);
+      if(state.targetTemperature !== undefined){
+        return callback(null, state.targetTemperature);
+      }else{
+        this.updateServiceHeatingCoolingState(0);
+        return callback(null, 26);
+      }
     }
 
     const device = getDevice({ host, log })
@@ -394,8 +414,7 @@ class AirConAccessory extends BroadlinkRMAccessory {
     if (state.targetTemperature > maxTemperature) return log(`The target temperature (${this.targetTemperature}) must be less than the maxTemperature (${maxTemperature})`);
 
     if (state.targetTemperature === previousValue) return
-
-    this.sendTemperature(state.targetTemperature, previousValue);
+    this.sendTemperature(state.targetTemperature, previousValue, state.currentHeatingCoolingState);
 	}
 
   configKeyForCurrentHeatingCoolingState () {
@@ -425,10 +444,12 @@ class AirConAccessory extends BroadlinkRMAccessory {
         return Characteristic.TargetHeatingCoolingState.COOL;
       case 'heat':
         return Characteristic.TargetHeatingCoolingState.HEAT;
+      case 'auto':
+        return Characteristic.TargetHeatingCoolingState.AUTO;
       default:
         return Characteristic.TargetHeatingCoolingState.AUTO;
     }
   }
 }
 
-module.exports = AirConAccessory
+module.exports = AirConProAccessory

@@ -1,25 +1,19 @@
 const sendData = require('../helpers/sendData');
-const delayForDuration = require('../helpers/delayForDuration')
 const BroadlinkRMAccessory = require('./accessory');
 
-class SwitchAccessory extends BroadlinkRMAccessory {
+class ProjectorAccessory extends BroadlinkRMAccessory {
 
   async setSwitchState (hexData) {
     const { config, data, host, log, name, state } = this;
     let { disableAutomaticOff, onDuration } = config;
-
-    // Set defaults
-    if (disableAutomaticOff === undefined) disableAutomaticOff = true;
-    if (!onDuration) onDuration = 60;
-
     if (hexData) sendData({ host, hexData, log, name });
-
-    if (this.autoOffTimeout) clearTimeout(this.autoOffTimeout);
-
-    if (state.switchState && !disableAutomaticOff) {
-      this.autoOffTimeout = setTimeout(() => {
-        this.switchService.setCharacteristic(Characteristic.On, 0);
-      }, onDuration * 1000);
+    if (!state['switchState'] && hexData){
+        setTimeout(function() {
+            sendData({ host, hexData, log, name }); 
+        }, 1500);
+        console.log('Closed');
+    }else{
+        console.log('Opened');
     }
   }
 
@@ -49,4 +43,4 @@ class SwitchAccessory extends BroadlinkRMAccessory {
   }
 }
 
-module.exports = SwitchAccessory;
+module.exports = ProjectorAccessory;

@@ -1,169 +1,109 @@
+const sendData = require('../helpers/sendData');
 const delayForDuration = require('../helpers/delayForDuration');
 const BroadlinkRMAccessory = require('./accessory');
-const ServiceManagerTypes = require('../helpers/serviceManagerTypes');
-const catchDelayCancelError = require('../helpers/catchDelayCancelError');
 
 class GarageDoorOpenerAccessory extends BroadlinkRMAccessory {
 
   correctReloadedState (state) {
-    state.doorTargetState = state.doorCurrentState;
-    state.lockTargetState = state.lockCurrentState;
+    state.targetDoorState = state.currentDoorState;
   }
 
-  reset () {
-    super.reset();
+  async setTargetDoorState (hexData) {
+    const { config, data, host, log, name, state } = this;
+    let { autoCloseDelay, openCloseDuration } = config;
 
-    // Clear existing timeouts
-    if (this.closingTimeoutPromise) {
-      this.closingTimeoutPromise.cancel();
-      this.closingTimeoutPromise = null;
+    if (!openCloseDuration) openCloseDuration = 8;
+
+    sendData({ host, hexData, log, name });
+
+    if (!state.targetDoorState) {
+      if (this.finishedClosingTimeout) clearTimeout(this.finishedClosingTimeout);
+
+      this.finishedOpeningTimeout = setTimeout(() => {
+        log(`${name} setCurrentDoorState: open`);
+
+        this.garageDoorOpenerService.setCharacteristic(Characteristic.CurrentDoorState, 0);
+
+        if (autoCloseDelay) {
+          log(`${name} automatically closing in ${autoCloseDelay}s`);
+
+          this.autoCloseTimeout = setTimeout(() => {
+            log(`${name} setCurrentDoorState: closed`);
+
+            this.garageDoorOpenerService.setCharacteristic(Characteristic.TargetDoorState, 1);
+          }, autoCloseDelay * 1000);
+        }
+      }, openCloseDuration * 1000);
+    } else {
+      if (this.garageDoorOpenerService) clearTimeout(this.garageDoorOpenerService);
+      if (this.autoCloseTimeout) clearTimeout(this.autoCloseTimeout);
+
+      this.finishedClosingTimeout = setTimeout(() => {
+        log(`${name} setCurrentDoorState: closed`);
+
+        this.garageDoorOpenerService.setCharacteristic(Characteristic.CurrentDoorState, 1);
+      }, openCloseDuration * 1000)
     }
-
-    if (this.openingTimeoutPromise) {
-      this.openingTimeoutPromise.cancel();
-      this.openingTimeoutPromise = null;
-    }
-
-    if (this.autoCloseTimeoutPromise) {
-      this.autoCloseTimeoutPromise.cancel();
-      this.autoCloseTimeoutPromise = null
-    }
-  }
-
-  async setDoorTargetState (hexData, previousValue) {
-    const { host, log, name, debug, state, serviceManager } = this;
-
-    this.reset();
-
-    // If you open the garage door and then close it before it's fully open the accessory shall now
-    // update to "Closing" instead of immediately showing as "Closed".
-    
-    // TODO: We could determine how much time has passed while opening and show closing for that amount of time. 
-    if (previousValue !== state.doorTargetState && state.doorCurrentState === state.doorTargetState) {
-      serviceManager.setCharacteristic(Characteristic.CurrentDoorState, !state.doorTargetState);
-    }
-    
-    // Send pre-determined hex data
-    await this.performSend(hexData);
-
-    catchDelayCancelError(async () => {
-      if (state.doorTargetState === Characteristic.TargetDoorState.OPEN) {
-        await this.open();
-      } else {
-        await this.close();
-      }
-    })
-  }
-
-  async open (hexData) {
-    const { config, data, host, log, name, state, debug, serviceManager } = this;
-    let { autoCloseDelay, openDuration, openCloseDuration } = config;
-
-    // Defaults
-    if (!openDuration) openDuration = openCloseDuration || 8;
-
-    log(`${name} setDoorCurrentState: opening`);
-    this.openingTimeoutPromise = delayForDuration(openDuration);
-    await this.openingTimeoutPromise;
-
-    log(`${name} setDoorCurrentState: opened`);
-    serviceManager.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.OPEN);
-
-    if (!autoCloseDelay) return;
-
-    log(`${name} automatically closing in ${autoCloseDelay}s`);
-    this.autoCloseTimeoutPromise = delayForDuration(autoCloseDelay);
-    await this.autoCloseTimeoutPromise;
-
-    serviceManager.setCharacteristic(Characteristic.TargetDoorState, Characteristic.TargetDoorState.CLOSED);
-    this.close()
-  }
-
-  async close () {
-    const { config, data, host, log, name, state, debug, serviceManager } = this;
-    let { closeDuration, openCloseDuration } = config;
-
-    // Defaults
-    if (!closeDuration) closeDuration = openCloseDuration || 8;
-
-    log(`${name} setDoorCurrentState: closing`);
-
-    this.closingTimeoutPromise = delayForDuration(closeDuration);
-    await this.closingTimeoutPromise
-
-    log(`${name} setDoorCurrentState: closed`);
-    serviceManager.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.CLOSED);
   }
 
   async setLockTargetState (hexData) {
-    const { config, log, name, state, serviceManager } = this;
+    const { config, data, host, log, name, state } = this;
 
-    await this.performSend(hexData);
+    sendData({ host, hexData, log, name });
 
     if (!state.lockTargetState) {
-      log(`${name} setCurrentLockState: unlocked`)
-      serviceManager.setCharacteristic(Characteristic.LockCurrentState, Characteristic.LockCurrentState.UNSECURED);
+      log(`${name} setCurrentDoorState: unlocked`)
+      this.garageDoorOpenerService.setCharacteristic(Characteristic.LockCurrentState, Characteristic.LockCurrentState.UNSECURED);
     } else {
-      log(`${name} setCurrentLockState: locked`)
-      serviceManager.setCharacteristic(Characteristic.LockCurrentState, Characteristic.LockCurrentState.SECURED);
+      log(`${name} setCurrentDoorState: locked`)
+      this.garageDoorOpenerService.setCharacteristic(Characteristic.LockCurrentState, Characteristic.LockCurrentState.SECURED);
     }
   }
-  
-  // Service Manager Setup
 
-  setupServiceManager () {
-    const { data, name, serviceManagerType } = this;
-    const { close, open, lock, unlock } = data || {};
+  getServices () {
+    const services = super.getServices();
 
-    this.serviceManager = new ServiceManagerTypes[serviceManagerType](name, Service.GarageDoorOpener, this.log);
+    const { data, name } = this;
+    const { open, close, lock, unlock } = data;
 
-    this.serviceManager.addToggleCharacteristic({
-      name: 'doorCurrentState',
-      type: Characteristic.CurrentDoorState,
-      bind: this,
-      getMethod: this.getCharacteristicValue,
-      setMethod: this.setCharacteristicValue,
-      props: {
+    const service = new Service.GarageDoorOpener(name);
+    this.addNameService(service);
 
-      }
+    this.createToggleCharacteristic({
+      service,
+      characteristicType: Characteristic.CurrentDoorState,
+      propertyName: 'currentDoorState',
     });
 
-    this.serviceManager.addToggleCharacteristic({
-      name: 'doorTargetState',
-      type: Characteristic.TargetDoorState,
-      getMethod: this.getCharacteristicValue,
-      setMethod: this.setCharacteristicValue,
-      bind: this,
-      props: {
-        onData: close,
-        offData: open,
-        setValuePromise: this.setDoorTargetState.bind(this)
-      }
+    this.createToggleCharacteristic({
+      service,
+      characteristicType: Characteristic.TargetDoorState,
+      propertyName: 'targetDoorState',
+      onData: open,
+      offData: close,
+      setValuePromise: this.setTargetDoorState.bind(this)
     });
 
-    this.serviceManager.addToggleCharacteristic({
-      name: 'lockCurrentState',
-      type: Characteristic.LockCurrentState,
-      bind: this,
-      getMethod: this.getCharacteristicValue,
-      setMethod: this.setCharacteristicValue,
-      props: {
-
-      }
+    this.createToggleCharacteristic({
+      service,
+      characteristicType: Characteristic.LockTargetState,
+      propertyName: 'lockTargetState',
+      onData: lock,
+      offData: unlock,
+      setValuePromise: this.setLockTargetState.bind(this)
     });
 
-    this.serviceManager.addToggleCharacteristic({
-      name: 'lockTargetState',
-      type: Characteristic.LockTargetState,
-      getMethod: this.getCharacteristicValue,
-      setMethod: this.setCharacteristicValue,
-      bind: this,
-      props: {
-        onData: lock,
-        offData: unlock,
-        setValuePromise: this.setLockTargetState.bind(this)
-      }
+    this.createToggleCharacteristic({
+      service,
+      characteristicType: Characteristic.LockCurrentState,
+      propertyName: 'lockCurrentState',
     });
+
+    this.garageDoorOpenerService = service;
+
+    services.push(service);
+
+    return services;
   }
 }
 
